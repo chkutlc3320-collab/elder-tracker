@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>長照機構運動紀錄系統 - Barcode Tracker</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 設定 Tailwind CSS 配置，使用 Inter 字體和圓角 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans TC', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 台灣常用字體設定，確保中文顯示正常 */
+        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; }
+        /* 隱藏預設的訊息盒子，只在需要時顯示 */
+        #messageBox {
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 sm:p-8 flex items-start justify-center">
+
+    <div id="app" class="w-full max-w-4xl bg-white shadow-2xl rounded-xl p-6 md:p-10 border border-indigo-100">
+
+        <!-- 標題區 -->
+        <header class="text-center mb-8 md:mb-12">
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-indigo-700 tracking-tight">長照運動條碼紀錄系統</h1>
+            <p class="mt-2 text-lg text-gray-600">掃描條碼或輸入編號，自動判斷報到/登出</p>
+        </header>
+
+        <!-- 條碼輸入與操作區 -->
+        <div class="space-y-6">
+            <div class="relative">
+                <!-- 掃描器掃描完會自動送出 Enter 訊號，觸發 autoCheckAction() -->
+                <input type="text" id="barcodeInput" placeholder="請掃描或輸入長輩編號 (例如: A001)"
+                       class="w-full p-4 pl-12 text-xl border-2 border-indigo-300 rounded-xl focus:border-indigo-500 focus:ring-indigo-500 transition duration-150"
+                       autofocus onkeyup="if(event.key === 'Enter') autoCheckAction()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="absolute left-3 top-1/2 transform -translate-y-1/2 h-6 w-6 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10m6-10v10m6-10v10m6-10v10M8 5h8M8 19h8" />
+                </svg>
+            </div>
+
+            <!-- 運動項目選擇 (長輩報到前顯示) -->
+            <div id="exerciseTypeContainer">
+                <label for="exerciseType" class="block text-lg font-medium text-gray-700 mb-2">請選擇運動項目 (報到前請先選)：</label>
+                <select id="exerciseType" class="w-full p-3 border border-gray-300 rounded-lg">
+                    <option value="健身車">健身車</option>
+                    <option value="健走">健走/散步</option>
+                    <option value="下肢肌力" selected>下肢肌力訓練</option>
+                    <option value="手眼協調">手眼協調遊戲</option>
+                    <option value="其他">其他</option>
+                </select>
+            </div>
+            
+            <!-- 單一執行按鈕 (提供手動點擊) -->
+            <button onclick="autoCheckAction(true)" id="actionButton" disabled
+                    class="w-full py-4 text-white font-bold text-xl rounded-xl transition duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed bg-indigo-500 hover:bg-indigo-600">
+                <span id="actionText">請掃描長輩編號...</span>
+            </button>
+        </div>
+
+        <!-- 訊息與結果顯示區 -->
+        <div id="resultsContainer" class="mt-8 pt-6 border-t border-indigo-200">
+            <!-- 訊息盒子 -->
+            <div id="messageBox" class="p-4 rounded-lg text-center font-semibold mb-4 bg-blue-100 text-blue-700">
+                歡迎使用系統。請掃描長輩條碼。
+            </div>
+
+            <!-- 長輩資訊卡 -->
+            <div id="elderCard" class="hidden bg-indigo-50 border-2 border-indigo-200 rounded-xl p-5 sm:p-6 shadow-md">
+                <h3 class="text-2xl font-bold text-indigo-800 mb-4 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.938 13.938 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span id="elderNameDisplay"></span> (<span id="elderIdDisplay"></span>)
+                </h3>
+                <div class="grid grid-cols-2 gap-4 text-lg">
+                    <div>
+                        <p class="text-gray-500">當前狀態：</p>
+                        <p id="statusDisplay" class="font-bold text-xl text-green-600">未報到</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-500">總運動次數：</p>
+                        <p id="totalSessionsDisplay" class="font-bold text-xl text-indigo-600">0 次</p>
+                    </div>
+                    <div class="col-span-2">
+                        <p class="text-gray-500">加入紀錄月份：</p>
+                        <p id="monthsDisplay" class="font-bold text-xl text-indigo-600">0 個月</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 最新運動紀錄 -->
+            <div id="currentSession" class="mt-4 p-4 rounded-lg bg-yellow-100 text-yellow-800 hidden">
+                <p class="font-semibold">當前運動紀錄：</p>
+                <p id="currentSessionInfo"></p>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, onSnapshot, collection, query, where, limit, orderBy, serverTimestamp, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ====================================================================================================================================================
+        // 【🔥🔥🔥 步驟四：貼上公司專案的設定 🔥🔥🔥】
+        
+        // 🚨 區塊 A: 請將您從 Firebase 複製的 appId 字串貼在這裡 (記得保留單引號 ' ' )
+        const appId = '1:650885065081:web:8a4089d850d0acf1cce7a8'; 
+        
+        // 🚨 區塊 B: 請將您從 Firebase 複製的完整 firebaseConfig 物件貼在這裡 (從 { 到 } )
+        const firebaseConfig = {apiKey: "AIzaSyD4O9S_XY_aqHkhj_p5rwzmnIG-5g4Hkd4",
+    authDomain: "worktime-e6790.firebaseapp.com",
+    projectId: "worktime-e6790",
+    storageBucket: "worktime-e6790.firebasestorage.app",
+    messagingSenderId: "650885065081",
+    appId: "1:650885065081:web:8a4089d850d0acf1cce7a8",
+    measurementId: "G-FLNC9H9FZK"
+        };
+        
+        // 此處不需要修改
+        const initialAuthToken = null; 
+        
+        // ====================================================================================================================================================
+
+
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+        let unsubscribeProfile = null;
+        let unsubscribeSessions = null;
+        let currentBarcodeId = null;
+        let activeSessionId = null; // 新增：用於保存當前進行中的 Session ID
+
+        // 全域變數供 HTML 內聯調用
+        window.autoCheckAction = autoCheckAction;
+
+        // UI 元素
+        const barcodeInput = document.getElementById('barcodeInput');
+        const elderCard = document.getElementById('elderCard');
+        const actionButton = document.getElementById('actionButton');
+        const actionText = document.getElementById('actionText');
+        const exerciseTypeContainer = document.getElementById('exerciseTypeContainer');
+        const exerciseTypeSelect = document.getElementById('exerciseType');
+        const currentSessionDiv = document.getElementById('currentSession');
+        const currentSessionInfo = document.getElementById('currentSessionInfo');
+
+        // 輔助函數：顯示訊息
+        function showMessage(text, type = 'info') {
+            const messageBox = document.getElementById('messageBox');
+            messageBox.textContent = text;
+            messageBox.className = 'p-4 rounded-lg text-center font-semibold mb-4';
+
+            let bgColor, textColor;
+            switch (type) {
+                case 'success':
+                    bgColor = 'bg-green-100';
+                    textColor = 'text-green-700';
+                    break;
+                case 'error':
+                    bgColor = 'bg-red-100';
+                    textColor = 'text-red-700';
+                    break;
+                case 'warning':
+                    bgColor = 'bg-yellow-100';
+                    textColor = 'text-yellow-700';
+                    break;
+                case 'info':
+                default:
+                    bgColor = 'bg-blue-100';
+                    textColor = 'text-blue-700';
+                    break;
+            }
+
+            messageBox.classList.add(bgColor, textColor);
+            messageBox.style.opacity = 1;
+            setTimeout(() => {
+                messageBox.style.opacity = 0;
+            }, 3000); // 3 秒後隱藏
+        }
+
+        // 輔助函數：格式化時間
+        function formatTime(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleString('zh-TW', {
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: false
+            });
+        }
+
+        // --- Firebase 初始化與驗證 ---
+        if (firebaseConfig && firebaseConfig.projectId && appId && !appId.includes('在這裡貼上')) { // 檢查是否有有效的 firebaseConfig
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('Debug');
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        showMessage('Firebase 連線成功，使用者已登入。', 'success');
+                    } else {
+                        // 首次登入或重新整理
+                        try {
+                            // 由於已切換到公司專案，這裡只需使用匿名登入
+                            await signInAnonymously(auth);
+                        } catch (error) {
+                            console.error("Firebase 登入失敗:", error);
+                            showMessage('Firebase 登入失敗，請檢查配置。', 'error');
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Firebase 初始化失敗:", error);
+                showMessage('系統初始化失敗，請檢查 Firebase 配置。', 'error');
+            }
+        } else {
+            showMessage('⚠️ 缺少 Firebase 設定。請完成步驟四的替換！', 'error');
+        }
+
+        // --- Firestore 路徑定義 ---
+        const getProfilePath = (id) => `artifacts/${appId}/users/${userId}/elder_profiles/${id}`;
+        const getSessionCollectionPath = () => `artifacts/${appId}/users/${userId}/session_logs`;
+
+        // --- 資料監聽與統計計算 ---
+        function attachListeners(barcodeId) {
+            if (!isAuthReady || !db) return;
+
+            // 1. 監聽長輩個人資料
+            if (unsubscribeProfile) unsubscribeProfile();
+            const profileRef = doc(db, getProfilePath(barcodeId));
+            unsubscribeProfile = onSnapshot(profileRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const profile = docSnap.data();
+                    displayElderInfo(profile, barcodeId);
+                } else {
+                    // 如果長輩不存在，則引導註冊
+                    registerNewElder(barcodeId);
+                }
+            }, (error) => {
+                console.error("監聽長輩資料失敗:", error);
+                showMessage('長輩資料讀取失敗。', 'error');
+            });
+
+            // 2. 監聽該長輩的所有運動紀錄並計算統計
+            if (unsubscribeSessions) unsubscribeSessions();
+            const sessionsColRef = collection(db, getSessionCollectionPath());
+            // 查詢該長輩的所有紀錄，並監聽最新一個 active session
+            const q = query(
+                sessionsColRef,
+                where("barcodeId", "==", barcodeId),
+                orderBy("checkIn", "desc")
+            );
+
+            unsubscribeSessions = onSnapshot(q, (snapshot) => {
+                let totalSessions = 0;
+                let activeSession = null;
+                activeSessionId = null; // 重設 active session ID
+
+                snapshot.docs.forEach(doc => {
+                    const session = doc.data();
+                    if (session.checkOut) {
+                        // 計算已完成的次數
+                        totalSessions++;
+                    } else if (!activeSession) {
+                        // 找到最新的活動中 session
+                        activeSession = { id: doc.id, ...session };
+                        activeSessionId = doc.id;
+                    }
+                });
+
+                updateStatistics(totalSessions, activeSession);
+            }, (error) => {
+                console.error("監聽運動紀錄失敗:", error);
+                showMessage('運動紀錄讀取失敗。', 'error');
+            });
+        }
+
+        // --- 顯示/更新 UI 函數 ---
+        let currentProfile = null;
+        function displayElderInfo(profile, id) {
+            currentProfile = profile;
+            elderCard.classList.remove('hidden');
+
+            document.getElementById('elderNameDisplay').textContent = profile.name || '未知長輩';
+            document.getElementById('elderIdDisplay').textContent = id;
+            
+            // 計算加入月數
+            const enrollDate = profile.enrollDate ? profile.enrollDate.toDate() : new Date();
+            const today = new Date();
+            const months = (today.getFullYear() - enrollDate.getFullYear()) * 12 + (today.getMonth() - enrollDate.getMonth());
+            document.getElementById('monthsDisplay').textContent = Math.max(0, months) + ' 個月';
+
+            updateActionButton('ready-checkin'); // 預設準備報到
+
+            // 清空輸入框並重新聚焦
+            barcodeInput.value = '';
+            barcodeInput.focus();
+
+            showMessage(`歡迎，${profile.name}！請選擇項目後掃描動作。`, 'info');
+        }
+
+        function updateStatistics(totalSessions, activeSession) {
+            document.getElementById('totalSessionsDisplay').textContent = totalSessions + ' 次';
+
+            // 根據是否有 active session 更新狀態
+            if (activeSession) {
+                document.getElementById('statusDisplay').textContent = '運動中';
+                document.getElementById('statusDisplay').classList.remove('text-green-600', 'text-gray-500');
+                document.getElementById('statusDisplay').classList.add('text-red-600');
+                
+                // 運動中，按鈕應顯示登出
+                updateActionButton('ready-checkout');
+
+                exerciseTypeContainer.classList.add('hidden');
+                currentSessionDiv.classList.remove('hidden');
+                currentSessionInfo.innerHTML = `
+                    <p>項目：<span class="font-bold">${activeSession.exerciseType || '未指定'}</span></p>
+                    <p>報到時間：<span class="font-bold">${formatTime(activeSession.checkIn)}</span></p>
+                    <p class="text-xs mt-1">請再次掃描條碼以登出</p>
+                `;
+            } else {
+                document.getElementById('statusDisplay').textContent = '休息中';
+                document.getElementById('statusDisplay').classList.remove('text-red-600', 'text-gray-500');
+                document.getElementById('statusDisplay').classList.add('text-green-600');
+                
+                // 休息中，按鈕應顯示報到
+                updateActionButton('ready-checkin');
+
+                exerciseTypeContainer.classList.remove('hidden');
+                currentSessionDiv.classList.add('hidden');
+            }
+        }
+        
+        function updateActionButton(state) {
+            actionButton.disabled = false;
+            actionButton.classList.remove('bg-green-500', 'hover:bg-green-600', 'bg-red-500', 'hover:bg-red-600', 'bg-indigo-500', 'hover:bg-indigo-600');
+
+            if (state === 'ready-checkin') {
+                actionText.textContent = '手動報到 (休息中)';
+                actionButton.classList.add('bg-green-500', 'hover:bg-green-600');
+                actionButton.dataset.action = 'checkin';
+            } else if (state === 'ready-checkout') {
+                actionText.textContent = '手動登出 (運動中)';
+                actionButton.classList.add('bg-red-500', 'hover:bg-red-600');
+                actionButton.dataset.action = 'checkout';
+            } else {
+                actionText.textContent = '請掃描長輩編號...';
+                actionButton.disabled = true;
+                actionButton.classList.add('bg-indigo-500', 'hover:bg-indigo-600');
+            }
+        }
+
+
+        // --- 核心操作函數 ---
+        
+        // 外部呼叫：掃描器按下 Enter 或手動點擊按鈕
+        async function autoCheckAction(isManualClick = false) {
+            if (!isAuthReady || !db) {
+                showMessage('系統尚未初始化完成，請稍候。', 'warning');
+                return;
+            }
+
+            const barcodeId = barcodeInput.value.trim().toUpperCase();
+            if (!barcodeId) {
+                // 如果是手動點擊，且輸入框是空的，則不能執行
+                if (isManualClick) {
+                    showMessage('請先掃描或輸入長輩編號。', 'warning');
+                }
+                return;
+            }
+
+            currentBarcodeId = barcodeId;
+            
+            // 1. 重新啟動監聽器，確保資料讀取並更新 UI 狀態
+            // attachListeners(barcodeId); // 這裡不做，避免競態條件。在登入/登出後再更新。
+
+            // 2. 執行同步查詢，判斷長輩當前狀態
+            const activeSession = await findActiveSession(barcodeId);
+
+            if (activeSession) {
+                // 找到進行中的紀錄 -> 執行登出
+                await handleCheckOut(barcodeId, activeSession);
+            } else {
+                // 未找到進行中的紀錄 -> 執行報到
+                // 在報到前，先確保長輩資料已載入 (註冊)
+                const profileExists = await checkProfileExists(barcodeId);
+                if (profileExists) {
+                    await handleCheckIn(barcodeId);
+                }
+                // 如果長輩不存在，會在 attachListeners 的 onSnapshot 裡引導註冊
+            }
+            
+            // 清空輸入框並重新聚焦，方便下一位長輩操作
+            barcodeInput.value = '';
+            barcodeInput.focus();
+        }
+
+        // 輔助函數：檢查長輩資料是否存在 (避免在 autoCheckAction 中重複註冊)
+        async function checkProfileExists(barcodeId) {
+            try {
+                const profileRef = doc(db, getProfilePath(barcodeId));
+                const docSnap = await getDoc(profileRef);
+                if (!docSnap.exists()) {
+                    // 如果不存在，手動觸發註冊流程
+                    registerNewElder(barcodeId); 
+                    return false;
+                }
+                currentProfile = docSnap.data();
+                return true;
+            } catch (error) {
+                console.error("檢查長輩資料失敗:", error);
+                showMessage('檢查長輩資料失敗。', 'error');
+                return false;
+            }
+        }
+
+        // 輔助函數：查找長輩的 active session (同步查詢)
+        async function findActiveSession(barcodeId) {
+            try {
+                const sessionsColRef = collection(db, getSessionCollectionPath());
+                const q = query(
+                    sessionsColRef,
+                    where("barcodeId", "==", barcodeId),
+                    where("checkOut", "==", null),
+                    limit(1)
+                );
+                
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                    const docToUpdate = snapshot.docs[0];
+                    return { id: docToUpdate.id, data: docToUpdate.data() };
+                }
+                return null;
+            } catch (error) {
+                console.error("查找活動中紀錄失敗:", error);
+                showMessage('查找活動中紀錄失敗，請稍後再試。', 'error');
+                return null;
+            }
+        }
+
+
+        async function registerNewElder(barcodeId) {
+            // 如果長輩不存在，提示註冊
+            const newName = prompt(`長輩編號 ${barcodeId} 尚未註冊。請輸入長輩姓名以完成註冊：`);
+            if (!newName || newName.trim() === '') {
+                showMessage('註冊取消。請重新掃描。', 'warning');
+                elderCard.classList.add('hidden');
+                barcodeInput.focus();
+                return;
+            }
+
+            try {
+                const profileRef = doc(db, getProfilePath(barcodeId));
+                await setDoc(profileRef, {
+                    name: newName.trim(),
+                    enrollDate: serverTimestamp(), // 使用伺服器時間作為加入日期
+                    barcodeId: barcodeId
+                }, { merge: true });
+
+                showMessage(`${newName} (編號 ${barcodeId}) 註冊成功！`, 'success');
+                // 註冊成功後，更新 UI
+                attachListeners(barcodeId); 
+            } catch (error) {
+                console.error("註冊新長輩失敗:", error);
+                showMessage('長輩註冊失敗，請稍後再試。', 'error');
+            }
+        }
+
+        async function handleCheckIn(barcodeId) {
+            const exerciseType = exerciseTypeSelect.value;
+            
+            try {
+                const sessionsColRef = collection(db, getSessionCollectionPath());
+                await addDoc(sessionsColRef, {
+                    barcodeId: barcodeId,
+                    checkIn: serverTimestamp(),
+                    checkOut: null, // 尚未結束
+                    exerciseType: exerciseType,
+                    name: currentProfile ? currentProfile.name : 'N/A' // 冗餘欄位方便查詢
+                });
+                showMessage(`${currentProfile.name} (編號 ${barcodeId}) 報到成功！開始進行【${exerciseType}】。`, 'success');
+                // 成功後手動更新監聽器以刷新 UI
+                attachListeners(barcodeId);
+            } catch (error) {
+                console.error("報到失敗:", error);
+                showMessage('報到紀錄寫入失敗，請稍後再試。', 'error');
+            }
+        }
+
+        async function handleCheckOut(barcodeId, activeSession) {
+            if (!activeSession) {
+                 showMessage('未找到進行中的運動紀錄。', 'warning');
+                 return;
+            }
+
+            try {
+                const docToUpdate = doc(db, getSessionCollectionPath(), activeSession.id);
+                const sessionData = activeSession.data;
+
+                await updateDoc(docToUpdate, {
+                    checkOut: serverTimestamp(),
+                });
+
+                // 計算運動時長 (粗略計算，以伺服器時間為主)
+                const checkInTime = sessionData.checkIn.toDate().getTime();
+                const checkOutTime = new Date().getTime();
+                const durationMs = checkOutTime - checkInTime;
+                const durationMinutes = Math.round(durationMs / 60000);
+
+                showMessage(`${currentProfile.name} 結束運動！【${sessionData.exerciseType}】共進行約 ${durationMinutes} 分鐘。`, 'success');
+                // 成功後手動更新監聽器以刷新 UI
+                attachListeners(barcodeId);
+            } catch (error) {
+                console.error("結束運動失敗:", error);
+                showMessage('結束運動紀錄寫入失敗，請稍後再試。', 'error');
+            }
+        }
+    </script>
+
+</body>
+</html>
